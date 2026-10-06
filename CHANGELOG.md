@@ -12,6 +12,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `playbook.md` seeded with starting assumptions and reflection limits.
 - `agent.config.Settings`: every trading limit and threshold in one validated place.
 - `agent.deriv.guard`: demo-only WebSocket and account checks that fail closed.
+- `agent.deriv.ws`: WebSocket client with req_id routing, persistent subscriptions, watchdog and backoff reconnect using a fresh OTP each time.
+- `agent.deriv.rest`: demo account selection and OTP WebSocket URL retrieval.
+- `tests/fakes/fake_deriv_server.py`: offline stand-in for Deriv's demo WebSocket.
 - `agent.market`: tick ring buffer with stale-data guard, and explainable indicators (returns, volatility, streak, z-score).
 - `agent.clock`: injectable clock (`SystemClock`, `FakeClock`).
 - Claude Code workflow: post-edit hook (ruff + unit tests) and a `risk-reviewer` subagent for safety-critical paths.
