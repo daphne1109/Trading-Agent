@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.env.*
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.hypothesis
+spike_output
+backups
+tests
+scripts
+docs
+*.md
+!playbook.md

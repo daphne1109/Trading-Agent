@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # --- Storage ---
-    database_url: str = "postgresql://agent:agent@localhost:5432/agent"
+    database_url: str = "postgresql://agent:agent@127.0.0.1:5432/agent"
 
     # --- Market ---
     symbol: str = "1HZ100V"
