@@ -1,0 +1,55 @@
+[project]
+name = "deriv-agent"
+version = "0.1.0"
+description = "Always-on AI trading agent on a Deriv demo account, with code-enforced guardrails, human approval and nightly self-reflection."
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=13",
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "psycopg[binary,pool]>=3.2",
+    "anthropic>=0.40",
+    "python-telegram-bot>=21",
+    "apscheduler>=3.10,<4",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "hypothesis>=6.100",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agent*", "web*", "eval*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: needs Postgres or the fake Deriv server",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["agent.risk.*", "agent.deriv.guard"]
+strict = true
