@@ -13,7 +13,7 @@ async def test_migrations_idempotent(pool):
     async with pool.connection() as conn:
         first = await migrate(conn)
         second = await migrate(conn)
-    assert first == ["001_init"]
+    assert first == ["001_init", "002_execution_safety"]
     assert second == []
 
 

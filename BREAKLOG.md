@@ -11,6 +11,25 @@ Every incident is logged here when it happens: what broke, how it was found, the
 **Lesson:** (one general sentence)
 -->
 
+## 2026-10-06 19:30 MYT: Executor could under-count open positions after an uncertain buy (caught before commit)
+**What broke:** The first executor design marked a trade `error` whenever the `buy` call raised. That included a timeout or dropped connection *after* the request was sent, when the contract might be live. The trade was then left out of the open-position and P&L counts, so a retry could exceed the position limit and the daily loss cap. Review also found three more problems:
+- "human approved" was just a boolean the caller passed in;
+- an approval row with no expiry was accepted;
+- an old decision could still execute.
+
+**How it was found:** The `risk-reviewer` subagent. It took three review rounds before it approved.
+**Root cause:** The design treated "the call failed" as "nothing happened". In a distributed system, a timeout means "unknown", not "no".
+**Fix:**
+- A new `unknown` trade status that fails closed: it counts as an open position for 10 minutes and as a full-stake loss for the day. Only a definite Deriv rejection counts as `error`.
+- The executor reads the decision from the DB and checks approvals against the `approvals` table, including expiry and that the approval covers every current trigger.
+- Decisions have a maximum age.
+- The quote must equal the configured stake.
+- Kill/pause is re-checked right before the buy.
+- A single-instance Postgres advisory lock, whose loss halts trading.
+- 26 executor tests cover each case.
+
+**Lesson:** When a side effect may have happened, record "unknown" and let it count against your limits. Never record "failed".
+
 ## 2026-10-06 18:10 MYT: Risk gate approved trades it should have blocked (caught before commit)
 **What broke:** The first RiskGate passed all 40 of its own tests, including a property test. An adversarial review still found inputs that produced APPROVE:
 - a NaN or negative market-data age (`nan > 5` is False);

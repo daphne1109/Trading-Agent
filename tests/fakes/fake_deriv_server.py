@@ -35,6 +35,17 @@ class FakeDerivServer:
         self._conns: set[ServerConnection] = set()
         self._sub_ids = itertools.count(1)
         self.port = 0
+        # trading controls
+        self.payout_ratio = 1.95
+        self.ask_price_override: float | None = None
+        self.fail_next_buy = False
+        self.swallow_next_buy = False  # execute the buy but never reply (simulates a timeout)
+        self.settle_after_s = 0.1
+        self.outcomes: list[str] = []  # "won"/"lost" per contract, in order; default "won"
+        self.buys: list[dict[str, Any]] = []
+        self._proposals: dict[str, dict[str, Any]] = {}
+        self._contract_ids = itertools.count(9_000_001)
+        self._contracts: dict[int, dict[str, Any]] = {}
 
     async def __aenter__(self) -> FakeDerivServer:
         self._server = await serve(self._handler, "127.0.0.1", 0)
@@ -98,6 +109,22 @@ class FakeDerivServer:
             for task in streams:
                 task.cancel()
             return {"msg_type": "forget_all", "forget_all": [], "req_id": req_id}
+        if "forget" in msg:
+            return {"msg_type": "forget", "forget": 1, "req_id": req_id}
+        if "proposal" in msg:
+            return self._proposal(msg, req_id)
+        if "buy" in msg:
+            reply = self._buy(msg, req_id)
+            if self.swallow_next_buy:
+                self.swallow_next_buy = False
+                return None
+            return reply
+        if "proposal_open_contract" in msg and msg.get("subscribe") == 1:
+            sub_id = f"sub-{next(self._sub_ids)}"
+            streams.append(
+                asyncio.create_task(self._follow(conn, int(msg["contract_id"]), req_id, sub_id))
+            )
+            return None
         if "ticks" in msg and msg.get("subscribe") == 1:
             sub_id = f"sub-{next(self._sub_ids)}"
             streams.append(asyncio.create_task(self._stream(conn, msg["ticks"], req_id, sub_id)))
@@ -107,6 +134,85 @@ class FakeDerivServer:
             "error": {"code": "UnrecognisedRequest", "message": "fake server"},
             "req_id": req_id,
         }
+
+    def _proposal(self, msg: dict[str, Any], req_id: Any) -> dict[str, Any]:
+        amount = float(msg["amount"])
+        ask = self.ask_price_override if self.ask_price_override is not None else amount
+        pid = secrets.token_hex(6)
+        self._proposals[pid] = dict(msg, ask_price=ask)
+        return {
+            "msg_type": "proposal",
+            "proposal": {
+                "id": pid,
+                "ask_price": ask,
+                "payout": round(amount * self.payout_ratio, 2),
+                "spot": self._quote,
+            },
+            "echo_req": msg,
+            "req_id": req_id,
+        }
+
+    def _buy(self, msg: dict[str, Any], req_id: Any) -> dict[str, Any]:
+        proposal = self._proposals.pop(str(msg["buy"]), None)
+        if self.fail_next_buy or proposal is None:
+            self.fail_next_buy = False
+            return {
+                "msg_type": "buy",
+                "error": {"code": "InvalidContractProposal", "message": "fake buy failure"},
+                "req_id": req_id,
+            }
+        if float(msg["price"]) < proposal["ask_price"]:
+            return {
+                "msg_type": "buy",
+                "error": {"code": "PriceMoved", "message": "price moved"},
+                "req_id": req_id,
+            }
+        contract_id = next(self._contract_ids)
+        outcome = self.outcomes.pop(0) if self.outcomes else "won"
+        stake = proposal["ask_price"]
+        payout = round(float(proposal["amount"]) * self.payout_ratio, 2)
+        self._contracts[contract_id] = {"outcome": outcome, "stake": stake, "payout": payout}
+        self.buys.append({"contract_id": contract_id, **proposal})
+        return {
+            "msg_type": "buy",
+            "buy": {"contract_id": contract_id, "buy_price": stake, "payout": payout},
+            "req_id": req_id,
+        }
+
+    async def _follow(
+        self, conn: ServerConnection, contract_id: int, req_id: Any, sub_id: str
+    ) -> None:
+        contract = self._contracts.get(contract_id)
+        base = {"msg_type": "proposal_open_contract", "subscription": {"id": sub_id}}
+        if contract is None:
+            await conn.send(json.dumps({**base, "error": {"code": "NotFound"}, "req_id": req_id}))
+            return
+        await conn.send(
+            json.dumps(
+                {
+                    **base,
+                    "proposal_open_contract": {"contract_id": contract_id, "status": "open"},
+                    "req_id": req_id,
+                }
+            )
+        )
+        await asyncio.sleep(self.settle_after_s)
+        won = contract["outcome"] == "won"
+        profit = round(contract["payout"] - contract["stake"], 2) if won else -contract["stake"]
+        await conn.send(
+            json.dumps(
+                {
+                    **base,
+                    "proposal_open_contract": {
+                        "contract_id": contract_id,
+                        "status": contract["outcome"],
+                        "is_sold": 1,
+                        "profit": profit,
+                    },
+                    "req_id": req_id,
+                }
+            )
+        )
 
     async def _stream(self, conn: ServerConnection, symbol: str, req_id: Any, sub_id: str) -> None:
         while True:
