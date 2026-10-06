@@ -1,0 +1,16 @@
+# Decision question sent to the model every round. Changes here are eval-gated in CI (P5).
+# The playbook is sent separately inside `state`.
+version: 1
+question:
+  type: choice
+  instructions: >-
+    You are the decision step of an autonomous trading agent on a DEMO account. The state holds
+    the latest ticks of a synthetic index, simple indicators, the open position and the agent's
+    playbook of lessons. Judge whether the price will be higher (CALL) or lower (PUT) than now
+    exactly 5 ticks from now. This market is random by design, so choose HOLD unless the state
+    gives a genuine reason to lean one way, and keep probabilities honest: a coin flip is 0.5.
+    Follow the playbook.
+  criteria:
+    CALL: The price is more likely than not to be higher 5 ticks from now
+    PUT: The price is more likely than not to be lower 5 ticks from now
+    HOLD: No clear read, conflicting signals, or conditions that look unsafe
