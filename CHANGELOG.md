@@ -7,4 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 - Repository bootstrap: `pyproject.toml` with runtime and dev dependencies, `.env.example` listing every secret by name, git ignore rules and LF line endings.
+- `CLAUDE.md` with agent rules, layout, commands and commit conventions.
+- `BREAKLOG.md` incident log (first entry: Deriv API platform change).
+- `playbook.md` seeded with starting assumptions and reflection limits.
 - `PLAN.md`: phased build plan (P0–P7) with tasks, named tests, exit criteria, UI plan, and a testing and benchmarking strategy (fault injection + shadow baselines).
