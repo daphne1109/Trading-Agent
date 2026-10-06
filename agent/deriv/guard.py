@@ -34,6 +34,7 @@ def assert_demo_ws_url(url: str, allowed_hosts: Collection[str]) -> None:
 
 _DEMO_MARKERS = {"demo", "virtual"}
 _REAL_MARKERS = {"real", "live"}
+_TYPE_KEYS = ("account_type", "type", "environment", "group")
 
 
 def assert_demo_account(account: Mapping[str, object]) -> None:
@@ -42,12 +43,14 @@ def assert_demo_account(account: Mapping[str, object]) -> None:
     The exact field names of the new accounts endpoint are confirmed in the P0 spike
     (docs/api-notes.md). Until then this accepts the common shapes and fails closed.
     """
-    if account.get("is_virtual") in (True, 1, "1"):
-        return
-    for key in ("account_type", "type", "environment", "group"):
-        value = str(account.get(key, "")).strip().lower()
+    # 1. Any real-money marker anywhere wins, even if another field says demo.
+    if "is_virtual" in account and account["is_virtual"] not in (True, 1, "1"):
+        raise RealAccountRefused(f"account is_virtual={account['is_virtual']!r}")
+    values = {key: str(account.get(key, "")).strip().lower() for key in _TYPE_KEYS}
+    for key, value in values.items():
         if value in _REAL_MARKERS:
             raise RealAccountRefused(f"account {key}={value!r} is a real-money account")
-        if value in _DEMO_MARKERS:
-            return
+    # 2. Then require positive evidence of demo.
+    if account.get("is_virtual") in (True, 1, "1") or _DEMO_MARKERS & set(values.values()):
+        return
     raise RealAccountRefused("account record does not identify as demo")

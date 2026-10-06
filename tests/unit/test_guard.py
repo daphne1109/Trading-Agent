@@ -58,6 +58,9 @@ def test_guard_accepts_demo_account_json(account):
         {"account_type": "real"},
         {"type": "live"},
         {"is_virtual": 0, "account_type": "real"},
+        {"type": "demo", "group": "real"},  # conflicting markers: real wins
+        {"is_virtual": 1, "account_type": "real"},
+        {"is_virtual": 0, "type": "demo"},
         {},
         {"account_id": "DOT123"},
     ],

@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- `agent.risk`: fail-closed RiskGate with 11 deterministic rules, human-approval triggers and property-based tests; reviewed by the `risk-reviewer` subagent.
 - `agent.decision`: SystemOne client (Jev, Clef), Claude Haiku fallback, strict answer validation, and a router with timeouts, circuit breaker and per-provider daily spend caps that degrades to HOLD.
 - Repository bootstrap: `pyproject.toml` with runtime and dev dependencies, `.env.example` listing every secret by name, git ignore rules and LF line endings.
 - `CLAUDE.md` with agent rules, layout, commands and commit conventions.
