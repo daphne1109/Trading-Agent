@@ -1,6 +1,13 @@
 import pytest
 
-from agent.deriv.ws import backoff_delay
+from agent.deriv.ws import backoff_delay, redact
+
+
+def test_redact_strips_one_time_passwords():
+    msg = "InvalidStatus: wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc123&x=1 failed"
+    out = redact(msg)
+    assert "abc123" not in out
+    assert "otp=***&x=1" in out
 
 
 def test_backoff_sequence_without_jitter():

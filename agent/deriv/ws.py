@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import json
 import random
+import re
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
 from typing import Any
@@ -42,6 +44,14 @@ class ConnectionSilent(Exception):
     """No message arrived within the silence timeout."""
 
 
+_OTP = re.compile(r"(otp=)[^&\s'\"]+")
+
+
+def redact(text: str) -> str:
+    """Strip one-time passwords from anything that may be logged."""
+    return _OTP.sub(r"\1***", text)
+
+
 def backoff_delay(attempt: int, *, base_s: float, max_s: float, jitter: float) -> float:
     """Exponential backoff: base * 2^attempt, capped at max_s, plus up to one base of jitter."""
     return min(max_s, base_s * float(2**attempt)) + jitter * base_s
@@ -53,6 +63,7 @@ class _Subscription:
     queue: asyncio.Queue[Message] = field(
         default_factory=lambda: asyncio.Queue(maxsize=SUBSCRIPTION_QUEUE_SIZE)
     )
+    server_id: str | None = None  # Deriv's subscription.id, needed to `forget` it
 
 
 async def _no_events(kind: str, message: str, data: dict[str, Any]) -> None:
@@ -87,6 +98,7 @@ class DerivWS:
         self._subs: dict[int, _Subscription] = {}
         self._route: dict[int, int] = {}  # live req_id -> subscription id
         self._ws: Any = None
+        self._url: str | None = None
         self._stopping = False
 
         self.connected = asyncio.Event()
@@ -103,6 +115,7 @@ class DerivWS:
                 assert_demo_ws_url(url, self._allowed_hosts)
                 async with websockets.connect(url, ping_interval=None, max_size=2**22) as ws:
                     self._ws = ws
+                    self._url = url
                     attempt = 0
                     await self._resubscribe()
                     self.connected.set()
@@ -115,10 +128,11 @@ class DerivWS:
                 raise
             except Exception as exc:  # noqa: BLE001 - every other failure means "reconnect"
                 if not self._stopping:
-                    await self._emit("ws_disconnected", f"{type(exc).__name__}: {exc}", {})
+                    await self._emit("ws_disconnected", redact(f"{type(exc).__name__}: {exc}"), {})
             finally:
                 self.connected.clear()
                 self._ws = None
+                self._url = None
                 self._fail_pending()
 
             if self._stopping:
@@ -164,6 +178,29 @@ class DerivWS:
             await self._send_subscription(sub_id)
         return self._subs[sub_id].queue
 
+    async def unsubscribe(self, queue: asyncio.Queue[Message]) -> None:
+        """Stop a subscription: never re-sent after reconnects; Deriv is told to forget it."""
+        for sub_id, sub in list(self._subs.items()):
+            if sub.queue is queue:
+                del self._subs[sub_id]
+                for live_req, sid in list(self._route.items()):
+                    if sid == sub_id:
+                        del self._route[live_req]
+                if sub.server_id and self.connected.is_set():
+                    with contextlib.suppress(Exception):
+                        await self.request({"forget": sub.server_id}, timeout_s=5)
+                return
+
+    def connection_is_demo(self) -> bool:
+        """Re-run the demo guard on the live connection's URL (called right before every buy)."""
+        if not self.connected.is_set() or self._url is None:
+            return False
+        try:
+            assert_demo_ws_url(self._url, self._allowed_hosts)
+        except RealAccountRefused:
+            return False
+        return True
+
     # ------------------------------------------------------------------ internals
 
     async def _serve(self, ws: Any) -> None:
@@ -187,7 +224,11 @@ class DerivWS:
         req_id = msg.get("req_id")
         sub_id = self._route.get(req_id) if isinstance(req_id, int) else None
         if sub_id is not None:
-            queue = self._subs[sub_id].queue
+            sub = self._subs[sub_id]
+            server_id = (msg.get("subscription") or {}).get("id")
+            if server_id:
+                sub.server_id = str(server_id)
+            queue = sub.queue
             if queue.full():
                 queue.get_nowait()  # drop the oldest; a slow consumer must not stall the socket
             queue.put_nowait(msg)
