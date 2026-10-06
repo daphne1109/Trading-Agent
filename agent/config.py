@@ -49,6 +49,8 @@ class Settings(BaseSettings):
 
     # --- Trading (fixed by code, never by the model) ---
     decision_interval_s: int = Field(60, ge=10)
+    currency: str = "USD"
+    paper_payout_ratio: Decimal = Field(Decimal("1.95"), gt=1, le=3)  # shadow baselines only
     duration_ticks: int = Field(5, ge=1, le=10)
     stake_usd: Decimal = Field(Decimal("1.00"), gt=0)
     max_stake_usd: Decimal = Field(Decimal("2.00"), gt=0)

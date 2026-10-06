@@ -1,7 +1,11 @@
 """Agent entry point: `python -m agent.main`.
 
-P1 scope: connect to the Deriv demo WebSocket, stream ticks into the feed and Postgres,
-record operational events, and publish a heartbeat. Decision-making is added in P2.
+Runs, under one TaskGroup:
+  - the Deriv demo WebSocket (reconnecting, guarded);
+  - the tick consumer: feed buffer, Postgres, shadow-baseline settlement;
+  - a 10 s heartbeat in agent_state;
+  - the decision loop (model -> RiskGate -> executor), once connected and open trades resumed.
+Only one instance may run per database (advisory lock). KILL_SWITCH=1 refuses to start.
 """
 
 from __future__ import annotations
@@ -11,6 +15,8 @@ import contextlib
 import logging
 import signal
 import sys
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -18,12 +24,23 @@ from psycopg_pool import AsyncConnectionPool
 
 from agent.clock import Clock, SystemClock
 from agent.config import Settings, get_settings
+from agent.db.instance_lock import InstanceLock
 from agent.db.migrate import migrate
 from agent.db.repo import EventLog, StateStore, TickWriter
+from agent.db.trades import DecisionRecord, TradeRepo
+from agent.decision.base import DecisionModel
+from agent.decision.prompt import load_prompt
+from agent.decision.router import DecisionRouter
+from agent.decision.systemone import SystemOneModel
 from agent.deriv.rest import DerivRest
 from agent.deriv.schemas import Tick
 from agent.deriv.ws import DerivWS, UrlProvider
+from agent.execution.executor import Executor
+from agent.loop import DecisionLoop
 from agent.market.feed import MarketFeed
+from agent.risk.rules import RiskContext
+from agent.shadow import ShadowBook
+from agent.spend import SpendTracker
 
 log = logging.getLogger("agent")
 
@@ -32,12 +49,21 @@ EVENT_LEVELS = {
     "guard_refused": "critical",
     "tick_error": "error",
 }
-
 HEARTBEAT_EVERY_S = 10.0
+PLAYBOOK_PATH = Path("playbook.md")
+TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
+JEV_USD_PER_M_INPUT = "0.042"
+CLEF_FLASH_USD_PER_M_INPUT = "0.09"
 
 
 async def stream_ticks(
-    ws: DerivWS, feed: MarketFeed, writer: TickWriter, events: EventLog, clock: Clock, symbol: str
+    ws: DerivWS,
+    feed: MarketFeed,
+    writer: TickWriter,
+    shadow: ShadowBook,
+    events: EventLog,
+    clock: Clock,
+    symbol: str,
 ) -> None:
     queue = await ws.subscribe({"ticks": symbol})
     while True:
@@ -51,6 +77,10 @@ async def stream_ticks(
         received_at = clock.now()
         feed.on_tick(tick)
         await writer.add(tick, received_at)
+        try:
+            await shadow.on_tick(tick)
+        except Exception:  # noqa: BLE001 - paper bookkeeping must never stop the feed
+            log.exception("shadow settlement failed")
 
 
 async def heartbeat(
@@ -73,7 +103,7 @@ async def open_pool(settings: Settings) -> AsyncConnectionPool:
     pool = AsyncConnectionPool(
         settings.database_url,
         min_size=1,
-        max_size=5,
+        max_size=6,
         open=False,
         kwargs={"connect_timeout": 10},
     )
@@ -85,16 +115,68 @@ async def open_pool(settings: Settings) -> AsyncConnectionPool:
     return pool
 
 
+def build_providers(settings: Settings, http: httpx.AsyncClient) -> list[DecisionModel]:
+    """Decision providers in priority order, from whichever credentials are configured."""
+    providers: list[DecisionModel] = []
+    if settings.typesafe_api_key.get_secret_value():
+        providers.append(
+            SystemOneModel(
+                name="jev",
+                url=TYPESAFE_URL,
+                api_key=settings.typesafe_api_key.get_secret_value(),
+                model=settings.typesafe_model,
+                http=http,
+                usd_per_m_input=Decimal(JEV_USD_PER_M_INPUT),
+            )
+        )
+    if settings.cf_account_id and settings.cf_api_token.get_secret_value():
+        providers.append(
+            SystemOneModel(
+                name="clef",
+                url=(
+                    "https://api.cloudflare.com/client/v4/accounts/"
+                    f"{settings.cf_account_id}/ai/run/{settings.cf_model}"
+                ),
+                api_key=settings.cf_api_token.get_secret_value(),
+                model=settings.cf_model,
+                http=http,
+                usd_per_m_input=Decimal(CLEF_FLASH_USD_PER_M_INPUT),
+                send_model_in_body=False,
+            )
+        )
+    if settings.anthropic_api_key.get_secret_value():
+        import anthropic
+
+        from agent.decision.claude import ClaudeDecisionModel
+
+        client = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key.get_secret_value(), timeout=20, max_retries=0
+        )
+        providers.append(ClaudeDecisionModel(client))
+    return providers
+
+
 async def run(
-    settings: Settings, *, url_provider: UrlProvider | None = None, clock: Clock | None = None
+    settings: Settings,
+    *,
+    url_provider: UrlProvider | None = None,
+    clock: Clock | None = None,
+    providers: list[DecisionModel] | None = None,
 ) -> None:
     if settings.kill_switch:
         log.critical("KILL_SWITCH is set; refusing to start")
         return
     clock = clock or SystemClock()
-    pool = await open_pool(settings)
+    instance = InstanceLock(settings.database_url)
+    await instance.acquire()
+    try:
+        pool = await open_pool(settings)
+    except BaseException:
+        await instance.release()
+        raise
     events = EventLog(pool)
     state = StateStore(pool)
+    repo = TradeRepo(pool)
 
     async def on_ws_event(kind: str, message: str, data: dict[str, Any]) -> None:
         await events.record(kind, message, data, EVENT_LEVELS.get(kind, "info"))
@@ -116,25 +198,95 @@ async def run(
                 maxlen=settings.buffer_ticks,
             )
             writer = TickWriter(pool)
+            shadow = ShadowBook(
+                pool,
+                duration_ticks=settings.duration_ticks,
+                payout_ratio=settings.paper_payout_ratio,
+            )
+            models = providers if providers is not None else build_providers(settings, http)
+            spend = SpendTracker(
+                clock,
+                {
+                    "jev": settings.spend_cap_jev_usd,
+                    "clef": settings.spend_cap_clef_usd,
+                    "claude": settings.spend_cap_anthropic_usd,
+                },
+                await repo.spend_today(clock.now()),
+            )
+
+            loop: DecisionLoop | None = None
+            executor: Executor | None = None
+            if models:
+                router = DecisionRouter(models, spend, clock)
+
+                # The executor re-runs the loop's context builder; the loop owns the executor.
+                async def build_context(record: DecisionRecord, stake: Decimal) -> RiskContext:
+                    assert loop is not None
+                    return await loop.build_context(record, stake)
+
+                async def is_halted() -> bool:
+                    assert loop is not None
+                    return await loop.is_halted()
+
+                executor = Executor(ws, repo, events, settings, clock, build_context, is_halted)
+                loop = DecisionLoop(
+                    settings=settings,
+                    clock=clock,
+                    feed=feed,
+                    router=router,
+                    prompt=load_prompt(),
+                    repo=repo,
+                    state=state,
+                    events=events,
+                    executor=executor,
+                    ws=ws,
+                    shadow=shadow,
+                    playbook_path=PLAYBOOK_PATH,
+                    lock_held=instance.held,
+                )
+            else:
+                await events.record(
+                    "no_decision_provider",
+                    "no model credentials configured; streaming market data only",
+                    {},
+                    "warning",
+                )
+
+            async def trade() -> None:
+                assert loop is not None and executor is not None
+                await ws.connected.wait()
+                resumed = await executor.resume_open_trades()
+                if resumed:
+                    await events.record("trades_resumed", f"following {resumed} open trade(s)")
+                await loop.run()
+
             await state.set("started_at", clock.now().isoformat())
-            await events.record("agent_started", f"streaming {settings.symbol}")
+            await events.record(
+                "agent_started",
+                f"symbol {settings.symbol}; providers: {[m.name for m in models] or 'none'}",
+            )
             try:
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(ws.run(), name="ws")
                     tg.create_task(
-                        stream_ticks(ws, feed, writer, events, clock, settings.symbol),
+                        stream_ticks(ws, feed, writer, shadow, events, clock, settings.symbol),
                         name="ticks",
                     )
                     tg.create_task(writer.run_periodic_flush(), name="tick-flush")
                     tg.create_task(
                         heartbeat(state, feed, ws, clock, settings.symbol), name="heartbeat"
                     )
+                    if loop is not None:
+                        tg.create_task(trade(), name="decision-loop")
             finally:
+                if executor is not None:
+                    await executor.close()
                 with contextlib.suppress(Exception):
                     await writer.flush()
                 await events.record("agent_stopped", "shutdown")
     finally:
         await pool.close()
+        await instance.release()
 
 
 def main() -> None:
