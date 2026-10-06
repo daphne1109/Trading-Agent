@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `playbook.md` seeded with starting assumptions and reflection limits.
 - `agent.config.Settings`: every trading limit and threshold in one validated place.
 - `agent.deriv.guard`: demo-only WebSocket and account checks that fail closed.
+- `agent.market`: tick ring buffer with stale-data guard, and explainable indicators (returns, volatility, streak, z-score).
 - `agent.clock`: injectable clock (`SystemClock`, `FakeClock`).
 - Claude Code workflow: post-edit hook (ruff + unit tests) and a `risk-reviewer` subagent for safety-critical paths.
 - P0 spike scripts: `scripts/spike_deriv.py` (accounts → OTP → ticks → proposal → demo buy, refuses non-`/ws/demo` URLs), `scripts/spike_decision_models.py` (Jev, Clef-flash, Claude Haiku on the same snapshot), `scripts/spike_telegram.py` (chat id + approval buttons).
