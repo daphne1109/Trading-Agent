@@ -52,6 +52,7 @@ known-first-party = ["agent", "web", "eval", "spike_common"]
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["agent.risk.*", "agent.deriv.guard"]

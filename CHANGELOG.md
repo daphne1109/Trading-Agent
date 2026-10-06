@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `playbook.md` seeded with starting assumptions and reflection limits.
 - `agent.config.Settings`: every trading limit and threshold in one validated place.
 - `agent.deriv.guard`: demo-only WebSocket and account checks that fail closed.
+- `agent.main`: runs WebSocket, tick streaming, batched persistence and heartbeat; honours `KILL_SWITCH`; graceful shutdown.
+- `scripts/run_with_fake_server.py`: offline end-to-end smoke run with forced disconnects.
 - Postgres schema (`001_init.sql`: ticks, decisions, risk verdicts, approvals, trades, shadow decisions, playbook revisions, events, state, eval runs) with a forward-only migration runner.
 - `agent.db.repo`: batched `TickWriter`, `EventLog`, `StateStore`.
 - `docker-compose.yml` (Postgres tuned for a 1 GB VM, agent service with restart policy and log rotation) and a non-root `Dockerfile`.

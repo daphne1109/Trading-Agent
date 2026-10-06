@@ -44,7 +44,7 @@ class ConnectionSilent(Exception):
 
 def backoff_delay(attempt: int, *, base_s: float, max_s: float, jitter: float) -> float:
     """Exponential backoff: base * 2^attempt, capped at max_s, plus up to one base of jitter."""
-    return min(max_s, base_s * 2**attempt) + jitter * base_s
+    return min(max_s, base_s * float(2**attempt)) + jitter * base_s
 
 
 @dataclass

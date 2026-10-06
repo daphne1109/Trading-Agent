@@ -29,7 +29,7 @@ async def migrate(conn: AsyncConnection) -> list[str]:
             )
             if await cur.fetchone():
                 continue
-            await conn.execute(path.read_text(encoding="utf-8"))  # type: ignore[arg-type]
+            await conn.execute(path.read_text(encoding="utf-8"))
             await conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (version,))
             applied_now.append(version)
     return applied_now
