@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **Dashboard** (`web/`, http://localhost:8080): live status, decision pipeline, KPIs, price chart with trade markers, decision feed with per-decision explainability page, and model-vs-baselines comparison. Read-only; no CDN dependencies.
 - **Paper mode** (default): live ticks and real quotes from Deriv's public endpoint, every safety check unchanged, fills simulated at the quoted price and settled on live ticks. Added because Deriv's trading API isn't offered to Malaysian residents.
 - Labelled rule-based stand-in decision model for running without an AI key (paper mode only).
 - `agent.loop`: autonomous decision rounds (snapshot → model → log → shadow baselines → RiskGate → executor), every round logged including skips and HOLDs.

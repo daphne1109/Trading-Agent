@@ -1,6 +1,5 @@
-# secrets
-.env
-.env.*
+# secrets: anything starting with ".env" except the names-only template
+.env*
 !.env.example
 
 # personal notes, not for the public repo

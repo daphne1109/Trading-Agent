@@ -1,0 +1,19 @@
+{% set labels = {"model": "The model's own calls", "momentum_10": "Trend rule (10 ticks)", "coin_flip": "Coin flip", "always_hold": "Always wait"} %}
+{% if not rows %}
+<p class="muted empty">Comparisons appear after the first decisions settle.</p>
+{% else %}
+<table class="shadow">
+  <thead><tr><th>Strategy</th><th class="num">Calls</th><th class="num">Win rate</th><th class="num">Paper P&amp;L</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="{{ 'me' if r.strategy == 'model' else '' }}">
+      <td>{{ labels.get(r.strategy, r.strategy) }}</td>
+      <td class="num mono">{{ r.trades }}</td>
+      <td class="num mono">{{ r.win_rate | pct }}</td>
+      <td class="num mono {{ 'pos' if r.pnl > 0 else ('neg' if r.pnl < 0 else '') }}">{{ r.pnl | money(true) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted small note">Rise/Fall pays 1.95× on a win, so ~51.3% is break-even. On a random index, expect everyone near 50%. That is the honest baseline the model is measured against.</p>
+{% endif %}

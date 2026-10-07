@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Decision #{{ d.id }} · Sentinel{% endblock %}
+{% block content %}
+<p class="crumbs"><a href="/">← Overview</a></p>
+
+<section class="card">
+  <div class="cardhead">
+    <h1>Decision #{{ d.id }}</h1>
+    <span class="muted">{{ d.created_at | myt("%d %b %Y, %H:%M:%S") }} MYT</span>
+  </div>
+  {% if d.skipped_reason %}
+    <p>Round skipped before asking the model: <b>{{ d.skipped_reason }}</b></p>
+  {% else %}
+  <div class="facts">
+    <div><span>Model said</span><b><span class="act act-{{ (d.action or 'HOLD') | lower }}">{{ d.action }}</span></b></div>
+    <div><span>Confidence used</span><b class="mono">{{ "%.2f" | format(d.confidence or 0) }}</b></div>
+    <div><span>Provider</span><b>{{ d.provider }}{% if d.provider_is_primary == false %} <span class="tag warn">fallback</span>{% endif %}</b><small>{{ d.model }}</small></div>
+    <div><span>Latency · cost</span><b class="mono">{{ d.latency_ms or 0 }} ms · {{ d.cost_usd | money }}</b></div>
+  </div>
+  {% if d.provider == "rules" %}<p class="tag warn block">Rule-based stand-in: no AI key was configured, so a simple momentum rule answered. It passes through exactly the same risk gate.</p>{% endif %}
+  {% if d.error %}<p class="neg small">Provider issues: {{ d.error }}</p>{% endif %}
+  {% endif %}
+</section>
+
+{% if not d.skipped_reason %}
+<div class="grid2">
+  <section class="card">
+    <h2>What the model saw</h2>
+    {% set snap = d.snapshot or {} %}
+    <div id="spark" class="spark" data-ticks='{{ (snap.get("last_ticks") or []) | tojson }}'></div>
+    <table class="kv">
+      {% for k, v in (snap.get("indicators") or {}).items() %}
+      <tr><td>{{ k }}</td><td class="mono num">{{ v }}</td></tr>
+      {% endfor %}
+      <tr><td>open position</td><td class="mono num">{{ snap.get("open_position") }}</td></tr>
+      <tr><td>today</td><td class="mono num">{{ snap.get("today") }}</td></tr>
+    </table>
+    <h3>Probabilities</h3>
+    {% for k in ["CALL", "PUT", "HOLD"] %}
+      {% set p = (d.probabilities or {}).get(k, 0) %}
+      <div class="bar"><span>{{ k }}</span><i style="width: {{ (p * 100) | round(1) }}%" class="b-{{ k | lower }}"></i><em class="mono">{{ "%.2f" | format(p) }}</em></div>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>Risk gate verdict</h2>
+    {% if d.verdict %}
+      <p class="verdict v-{{ d.verdict.verdict | lower }}">{{ d.verdict.verdict | replace("_", " ") }}</p>
+      {% if d.verdict.rule_results %}
+      <ul class="rules">
+        {% for r in d.verdict.rule_results %}
+          <li class="{{ 'ok' if r.ok and not r.needs_approval else ('warn' if r.needs_approval else 'bad') }}">
+            <span class="mark">{{ "✓" if r.ok and not r.needs_approval else ("!" if r.needs_approval else "✕") }}</span>
+            <b>{{ r.rule | replace("_", " ") }}</b>
+            {% if r.reason %}<small>{{ r.reason }}</small>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">HOLD: nothing to check, no trade.</p>{% endif %}
+    {% else %}<p class="muted">No verdict recorded.</p>{% endif %}
+
+    <h2>Execution</h2>
+    {% if d.trade %}
+      {% set t = d.trade %}
+      <table class="kv">
+        <tr><td>status</td><td class="{{ 'pos' if t.status == 'won' else ('neg' if t.status in ('lost', 'error', 'unknown') else '') }}"><b>{{ t.status }}</b></td></tr>
+        <tr><td>contract</td><td class="mono">{{ t.contract_type }} · {{ t.duration_ticks }} ticks · {{ t.contract_id }}</td></tr>
+        <tr><td>quoted stake → payout</td><td class="mono">{{ t.buy_price | money }} → {{ t.payout | money }}</td></tr>
+        {% if t.raw and t.raw.get("entry") %}
+        <tr><td>entry → exit tick</td><td class="mono">{{ t.raw.entry.quote }} → {{ t.raw.exit.quote }}</td></tr>
+        {% endif %}
+        <tr><td>profit</td><td class="mono {{ 'pos' if (t.profit or 0) > 0 else 'neg' }}">{{ t.profit | money(true) }}</td></tr>
+        {% if t.error %}<tr><td>note</td><td>{{ t.error }}</td></tr>{% endif %}
+      </table>
+    {% else %}<p class="muted">No trade was placed for this decision.</p>{% endif %}
+
+    {% if d.shadow %}
+    <h2>Same moment, other strategies</h2>
+    <table class="kv">
+      {% for s in d.shadow %}
+      <tr><td>{{ s.strategy }}</td><td class="mono">{{ s.action }}{% if s.paper_profit is not none %} → <span class="{{ 'pos' if s.paper_profit > 0 else ('neg' if s.paper_profit < 0 else '') }}">{{ s.paper_profit | money(true) }}</span>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}

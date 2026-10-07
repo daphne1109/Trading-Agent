@@ -41,6 +41,8 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://agent:${POSTGRES_PASSWORD:-agent}@postgres:5432/agent
+      EXECUTION_MODE: ${EXECUTION_MODE:-paper}
+      DECISION_INTERVAL_S: ${DECISION_INTERVAL_S:-30}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +55,27 @@ services:
       resources:
         limits:
           memory: 384M
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers"]
+    environment:
+      DATABASE_URL: postgresql://agent:${POSTGRES_PASSWORD:-agent}@postgres:5432/agent
+    ports:
+      - "127.0.0.1:8080:8080"  # local only until the HTTPS proxy lands (P4)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
 volumes:
   pgdata:

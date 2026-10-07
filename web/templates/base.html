@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Sentinel{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%2334c38f'/></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z"/></svg>
+      Sentinel
+    </a>
+    <span class="tagline">Autonomous trading agent with guardrails it can't override</span>
+    <span class="spacer"></span>
+    <a class="gh" href="https://github.com/daphne1109/Trading-Agent" target="_blank" rel="noopener">GitHub ↗</a>
+  </header>
+  <div class="banner">
+    Paper trading on Deriv's live public market feed · fills at real Deriv quotes · virtual money only · research project, not financial advice
+  </div>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    Volatility indices are random by design: no strategy is expected to beat chance. Sentinel is about safe, observable, self-improving agent engineering.
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

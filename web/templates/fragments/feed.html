@@ -1,0 +1,32 @@
+{% if not rows %}
+<p class="muted empty">No decisions yet. The first round runs once there is enough price history (about 2 minutes after start).</p>
+{% else %}
+<table class="feed">
+  <thead><tr><th>Time (MYT)</th><th>Model said</th><th class="num">Conf.</th><th>Gate</th><th>Outcome</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr onclick="location.href='/decisions/{{ r.id }}'">
+      <td class="mono">{{ r.created_at | myt }}</td>
+      {% if r.skipped_reason %}
+        <td colspan="3" class="muted">skipped: {{ r.skipped_reason[:60] }}</td>
+      {% else %}
+        <td><span class="act act-{{ (r.action or 'HOLD') | lower }}">{{ r.action or "HOLD" }}</span> <span class="muted small">{{ r.provider }}</span></td>
+        <td class="num mono">{{ "%.2f" | format(r.confidence or 0) }}</td>
+        <td>
+          {% if r.verdict == "APPROVE" %}<span class="v ok">approved</span>
+          {% elif r.verdict == "REJECT" %}<span class="v bad" title="{{ (r.reasons or []) | join('; ') }}">blocked</span>
+          {% elif r.verdict == "NEEDS_APPROVAL" %}<span class="v warn" title="{{ (r.reasons or []) | join('; ') }}">needs human</span>
+          {% else %}<span class="v none">no trade</span>{% endif %}
+        </td>
+      {% endif %}
+      <td>
+        {% if r.trade_status in ("won", "lost") %}<span class="{{ 'pos' if r.trade_status == 'won' else 'neg' }}">{{ r.trade_status }} {{ r.profit | money(true) }}</span>
+        {% elif r.trade_status %}<span class="muted">{{ r.trade_status }}</span>
+        {% elif r.verdict == "REJECT" %}<span class="muted small">{{ ((r.reasons or [""])[0])[:42] }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

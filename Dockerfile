@@ -8,6 +8,7 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY agent ./agent
+COPY web ./web
 RUN pip install --upgrade pip && pip install .
 
 COPY playbook.md ./

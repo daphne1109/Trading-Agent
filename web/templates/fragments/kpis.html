@@ -1,0 +1,5 @@
+<div class="kpi"><span>Decisions today</span><b>{{ k.decisions }}</b><small>{{ k.holds }} HOLD · {{ k.skipped }} skipped</small></div>
+<div class="kpi"><span>Paper trades</span><b>{{ k.trades }}</b><small>{{ k.won }} won · {{ k.lost }} lost{% if k.open %} · {{ k.open }} open{% endif %}{% if k.unknown %} · {{ k.unknown }} unknown{% endif %}</small></div>
+<div class="kpi accent"><span>Blocked by risk gate</span><b>{{ k.blocked }}</b><small>{{ k.verdicts.get("NEEDS_APPROVAL", 0) }} needed a human</small></div>
+<div class="kpi"><span>Paper P&amp;L</span><b class="{{ 'pos' if k.pnl > 0 else ('neg' if k.pnl < 0 else '') }}">{{ k.pnl | money(true) }}</b><small>virtual · not a goal</small></div>
+<div class="kpi"><span>Model spend</span><b>{{ k.spend | money }}</b><small>{% if k.latency %}{{ "%.0f" | format(k.latency) }} ms avg decision{% else %}—{% endif %}</small></div>

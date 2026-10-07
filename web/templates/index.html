@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<section id="status" class="statusbar" data-src="/fragments/status" data-every="3000">
+  <span class="muted">Connecting…</span>
+</section>
+
+<section class="pipeline" aria-label="How a decision flows">
+  <div class="step"><b>1 · Live market</b><span>Deriv ticks, every second</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>2 · Model proposes</b><span>CALL / PUT / HOLD + probabilities</span></div>
+  <div class="arrow">→</div>
+  <div class="step gate"><b>3 · Risk gate decides</b><span>11 rules in code, the AI can't skip it</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>4 · Execute</b><span>re-quote, re-check, fill at real price</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>5 · Settle &amp; log</b><span>on live ticks; every step recorded</span></div>
+</section>
+
+<section id="kpis" class="kpis" data-src="/fragments/kpis" data-every="5000"></section>
+
+<section class="card chartcard">
+  <div class="cardhead">
+    <h2>1HZ100V · last 10 minutes</h2>
+    <div class="legend">
+      <span><i class="dot call"></i>CALL</span>
+      <span><i class="dot put"></i>PUT</span>
+      <span><i class="dot blocked"></i>blocked / needs human</span>
+    </div>
+  </div>
+  <div id="chart" class="chart" role="img" aria-label="Price chart with trade markers"></div>
+</section>
+
+<div class="grid2">
+  <section class="card">
+    <div class="cardhead">
+      <h2>Decision feed</h2>
+      <span class="muted small">every round is logged, including skips and HOLDs · click a row</span>
+    </div>
+    <div id="feed" data-src="/fragments/feed" data-every="5000"></div>
+  </section>
+  <section class="card">
+    <div class="cardhead">
+      <h2>Model vs simple strategies</h2>
+      <span class="muted small">paper-settled on the same snapshots</span>
+    </div>
+    <div id="shadow" data-src="/fragments/shadow" data-every="10000"></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}

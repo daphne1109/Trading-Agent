@@ -1,0 +1,7 @@
+<span class="light light-{{ s.light | lower }}"><i></i>{{ s.light }}</span>
+<span class="badge">{{ (s.config.mode or "paper") | upper }} MODE</span>
+<span class="item">last tick <b>{{ s.last_tick_age_s | ago }}</b>{% if s.last_tick %} · {{ "%.2f" | format(s.last_tick.quote) }}{% endif %}</span>
+<span class="item">model <b>{{ (s.config.providers or ["none"]) | join(" → ") }}</b>{% if s.config.providers == ["rules"] %} <span class="tag warn">rule-based stand-in, no AI key</span>{% endif %}</span>
+<span class="item">stake <b>${{ s.config.stake_usd or "—" }}</b> · {{ s.config.duration_ticks or "—" }} ticks</span>
+<span class="item">running since <b>{{ s.started_at | myt("%d %b %H:%M") }}</b> MYT</span>
+{% if s.reconnects %}<span class="item">reconnects <b>{{ s.reconnects }}</b></span>{% endif %}
