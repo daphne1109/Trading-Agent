@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **Paper mode** (default): live ticks and real quotes from Deriv's public endpoint, every safety check unchanged, fills simulated at the quoted price and settled on live ticks. Added because Deriv's trading API isn't offered to Malaysian residents.
+- Labelled rule-based stand-in decision model for running without an AI key (paper mode only).
 - `agent.loop`: autonomous decision rounds (snapshot → model → log → shadow baselines → RiskGate → executor), every round logged including skips and HOLDs.
 - `agent.shadow`: paper baselines (coin flip, always hold, momentum) plus the model's own direction, settled on real exit ticks.
 - `agent.execution`: fail-closed executor with re-quote, re-check, DB-verified human approvals, idempotent buys, an `unknown` status for uncertain outcomes, and settlement tracking that resumes after restarts.

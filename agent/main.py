@@ -31,11 +31,14 @@ from agent.db.trades import DecisionRecord, TradeRepo
 from agent.decision.base import DecisionModel
 from agent.decision.prompt import load_prompt
 from agent.decision.router import DecisionRouter
+from agent.decision.rules_model import RuleBasedModel
 from agent.decision.systemone import SystemOneModel
+from agent.deriv.guard import assert_demo_ws_url, assert_public_ws_url
 from agent.deriv.rest import DerivRest
 from agent.deriv.schemas import Tick
 from agent.deriv.ws import DerivWS, UrlProvider
 from agent.execution.executor import Executor
+from agent.execution.paper import PaperExecutor
 from agent.loop import DecisionLoop
 from agent.market.feed import MarketFeed
 from agent.risk.rules import RiskContext
@@ -181,15 +184,21 @@ async def run(
     async def on_ws_event(kind: str, message: str, data: dict[str, Any]) -> None:
         await events.record(kind, message, data, EVENT_LEVELS.get(kind, "info"))
 
+    paper = settings.execution_mode == "paper"
+
+    async def public_url() -> str:
+        return settings.deriv_public_ws_url
+
     try:
         async with httpx.AsyncClient(timeout=15) as http:
             ws = DerivWS(
-                url_provider or DerivRest(settings, http).demo_ws_url,
+                url_provider or (public_url if paper else DerivRest(settings, http).demo_ws_url),
                 settings.deriv_ws_allowed_hosts,
                 ping_interval_s=settings.ws_ping_interval_s,
                 silence_timeout_s=settings.ws_silence_timeout_s,
                 backoff_max_s=settings.ws_backoff_max_s,
                 on_event=on_ws_event,
+                url_guard=assert_public_ws_url if paper else assert_demo_ws_url,
             )
             feed = MarketFeed(
                 clock,
@@ -204,12 +213,15 @@ async def run(
                 payout_ratio=settings.paper_payout_ratio,
             )
             models = providers if providers is not None else build_providers(settings, http)
+            if not models and settings.allow_rule_model and paper:  # never in demo mode
+                models = [RuleBasedModel()]
             spend = SpendTracker(
                 clock,
                 {
                     "jev": settings.spend_cap_jev_usd,
                     "clef": settings.spend_cap_clef_usd,
                     "claude": settings.spend_cap_anthropic_usd,
+                    "rules": Decimal("1"),  # free; a cap is required for every provider
                 },
                 await repo.spend_today(clock.now()),
             )
@@ -228,7 +240,12 @@ async def run(
                     assert loop is not None
                     return await loop.is_halted()
 
-                executor = Executor(ws, repo, events, settings, clock, build_context, is_halted)
+                if paper:
+                    executor = PaperExecutor(
+                        ws, repo, events, settings, clock, build_context, is_halted, feed
+                    )
+                else:
+                    executor = Executor(ws, repo, events, settings, clock, build_context, is_halted)
                 loop = DecisionLoop(
                     settings=settings,
                     clock=clock,
@@ -261,9 +278,24 @@ async def run(
                 await loop.run()
 
             await state.set("started_at", clock.now().isoformat())
+            await state.set(
+                "config",
+                {
+                    "mode": settings.execution_mode,
+                    "symbol": settings.symbol,
+                    "providers": [m.name for m in models],
+                    "stake_usd": str(settings.stake_usd),
+                    "duration_ticks": settings.duration_ticks,
+                    "decision_interval_s": settings.decision_interval_s,
+                    "min_confidence": settings.min_confidence,
+                    "approval_band_high": settings.approval_band_high,
+                    "daily_loss_cap_usd": str(settings.daily_loss_cap_usd),
+                },
+            )
             await events.record(
                 "agent_started",
-                f"symbol {settings.symbol}; providers: {[m.name for m in models] or 'none'}",
+                f"{settings.execution_mode} mode; symbol {settings.symbol}; "
+                f"providers: {[m.name for m in models] or 'none'}",
             )
             try:
                 async with asyncio.TaskGroup() as tg:

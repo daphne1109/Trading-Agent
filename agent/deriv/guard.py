@@ -12,6 +12,7 @@ from collections.abc import Collection, Mapping
 from urllib.parse import urlparse
 
 DEMO_WS_PATH = "/trading/v1/options/ws/demo"
+PUBLIC_WS_PATH = "/trading/v1/options/ws/public"  # market data + quotes, no account at all
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
 
@@ -21,6 +22,17 @@ class RealAccountRefused(RuntimeError):
 
 def assert_demo_ws_url(url: str, allowed_hosts: Collection[str]) -> None:
     """Refuse any WebSocket URL that is not the demo endpoint on an allowed host."""
+    _assert_ws_path(url, allowed_hosts, DEMO_WS_PATH)
+
+
+def assert_public_ws_url(url: str, allowed_hosts: Collection[str]) -> None:
+    """Paper mode: refuse anything but the unauthenticated public endpoint on an allowed host."""
+    _assert_ws_path(url, allowed_hosts, PUBLIC_WS_PATH)
+    if "otp=" in (urlparse(url).query or ""):
+        raise RealAccountRefused("paper mode must not carry account credentials")
+
+
+def _assert_ws_path(url: str, allowed_hosts: Collection[str], expected_path: str) -> None:
     parsed = urlparse(url)
     host = parsed.hostname or ""
     if host not in allowed_hosts:
@@ -28,8 +40,8 @@ def assert_demo_ws_url(url: str, allowed_hosts: Collection[str]) -> None:
     expected_scheme = "ws" if host in LOCAL_HOSTS else "wss"
     if parsed.scheme not in {expected_scheme, "wss"}:
         raise RealAccountRefused(f"WebSocket scheme {parsed.scheme!r} is not allowed")
-    if parsed.path.rstrip("/") != DEMO_WS_PATH:
-        raise RealAccountRefused(f"WebSocket path {parsed.path!r} is not the demo endpoint")
+    if parsed.path.rstrip("/") != expected_path:
+        raise RealAccountRefused(f"WebSocket path {parsed.path!r} is not {expected_path}")
 
 
 _DEMO_MARKERS = {"demo", "virtual"}

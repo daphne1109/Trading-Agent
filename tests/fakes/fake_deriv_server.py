@@ -20,10 +20,15 @@ from typing import Any
 from websockets.asyncio.server import Server, ServerConnection, serve
 
 DEMO_PATH = "/trading/v1/options/ws/demo"
+PUBLIC_PATH = "/trading/v1/options/ws/public"
 
 
 class FakeDerivServer:
-    def __init__(self, *, tick_interval_s: float = 0.02, start_quote: float = 1000.0) -> None:
+    def __init__(
+        self, *, tick_interval_s: float = 0.02, start_quote: float = 1000.0, public: bool = False
+    ) -> None:
+        self.public = public  # serve the unauthenticated public endpoint (no OTP)
+        self.buy_attempts_on_public = 0
         self.tick_interval_s = tick_interval_s
         self.silent = False
         self.connections_total = 0
@@ -58,6 +63,8 @@ class FakeDerivServer:
         await self._server.wait_closed()
 
     def issue_url(self) -> str:
+        if self.public:
+            return f"ws://127.0.0.1:{self.port}{PUBLIC_PATH}"
         otp = secrets.token_hex(8)
         self._valid_otps.add(otp)
         return f"ws://127.0.0.1:{self.port}{DEMO_PATH}?otp={otp}"
@@ -76,11 +83,15 @@ class FakeDerivServer:
     async def _handler(self, conn: ServerConnection) -> None:
         path, _, query = (conn.request.path if conn.request else "").partition("?")
         otp = query.removeprefix("otp=")
-        if path != DEMO_PATH or otp not in self._valid_otps:
+        if self.public:
+            accepted = path == PUBLIC_PATH
+        else:
+            accepted = path == DEMO_PATH and otp in self._valid_otps
+            self._valid_otps.discard(otp)  # single use
+        if not accepted:
             self.rejected_total += 1
             await conn.close(code=4001, reason="invalid path or otp")
             return
-        self._valid_otps.discard(otp)  # single use
         self.connections_total += 1
         self._conns.add(conn)
         streams: list[asyncio.Task[None]] = []
@@ -114,6 +125,13 @@ class FakeDerivServer:
         if "proposal" in msg:
             return self._proposal(msg, req_id)
         if "buy" in msg:
+            if self.public:  # the real public endpoint has no account to buy with
+                self.buy_attempts_on_public += 1
+                return {
+                    "msg_type": "buy",
+                    "error": {"code": "AuthorizationRequired", "message": "public endpoint"},
+                    "req_id": req_id,
+                }
             reply = self._buy(msg, req_id)
             if self.swallow_next_buy:
                 self.swallow_next_buy = False

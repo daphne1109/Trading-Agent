@@ -26,6 +26,8 @@ def test_config_defaults_are_consistent():
         {"approval_band_high": 0.52, "min_confidence": 0.6},
         {"stale_tick_s": 0},
         {"min_history_ticks": 500, "buffer_ticks": 200},
+        {"execution_mode": "paper", "symbol": "R_100"},
+        {"execution_mode": "live"},
     ],
 )
 def test_config_rejects_bad_limits(overrides):

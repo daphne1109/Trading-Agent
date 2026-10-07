@@ -50,12 +50,20 @@ class MarketFeed:
 
     def on_tick(self, tick: Tick) -> None:
         buf = self._buffers.setdefault(tick.symbol, deque(maxlen=self._maxlen))
-        if buf and tick.epoch < buf[-1].tick.epoch:
-            return  # out-of-order tick after a reconnect: ignore it
+        if buf and tick.epoch <= buf[-1].tick.epoch:
+            return  # repeated or out-of-order tick (e.g. re-sent after a reconnect): ignore it
         buf.append(_Point(tick, self._clock.now()))
 
     def size(self, symbol: str) -> int:
         return len(self._buffers.get(symbol, ()))
+
+    def last_epoch(self, symbol: str) -> int | None:
+        buf = self._buffers.get(symbol)
+        return buf[-1].tick.epoch if buf else None
+
+    def ticks_after(self, symbol: str, epoch: int) -> list[Tick]:
+        """Ticks strictly after `epoch`, oldest first (for paper settlement)."""
+        return [p.tick for p in self._buffers.get(symbol, ()) if p.tick.epoch > epoch]
 
     def snapshot(self, symbol: str) -> Snapshot:
         buf = self._buffers.get(symbol)

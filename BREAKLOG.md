@@ -11,6 +11,22 @@ Every incident is logged here when it happens: what broke, how it was found, the
 **Lesson:** (one general sentence)
 -->
 
+## 2026-10-07 MYT: Deriv's trading API isn't available to Malaysian residents
+**What broke:** Registering the app on developers.deriv.com showed "These services are currently unavailable in your country of residence". No app ID and no account token, so the demo-account executor can't run.
+**How it was found:** The P0 setup, before any live trade.
+**Root cause:** Regulatory: Deriv doesn't serve Malaysian residents.
+**Fix:** We did not work around it with a VPN or false residence. A read-only probe showed that the unauthenticated public endpoint (`/trading/v1/options/ws/public`) still serves live ticks and real Rise/Fall quotes. The agent now defaults to **paper mode**:
+- It streams the live feed and gets a real quote for every trade.
+- It runs every safety check unchanged.
+- It fills on paper at the quoted price and settles on live ticks using Deriv's Rise/Fall rules.
+- It refuses to settle if a reconnect or a tick gap makes the exit tick uncertain.
+
+The demo-account executor stays, fully tested, behind `EXECUTION_MODE=demo`. The `risk-reviewer` approved the change after one round of fixes:
+- repeated ticks after a reconnect could shift the exit tick;
+- the rule-based stand-in model could have traded with no human approval in demo mode.
+
+**Lesson:** Check legal availability as early as the technical API. Keep execution behind an interface, so a constraint changes one component, not the system.
+
 ## 2026-10-06 19:30 MYT: Executor could under-count open positions after an uncertain buy (caught before commit)
 **What broke:** The first executor design marked a trade `error` whenever the `buy` call raised. That included a timeout or dropped connection *after* the request was sent, when the contract might be live. The trade was then left out of the open-position and P&L counts, so a retry could exceed the position limit and the daily loss cap. Review also found three more problems:
 - "human approved" was just a boolean the caller passed in;

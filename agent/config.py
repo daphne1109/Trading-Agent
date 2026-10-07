@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +12,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
+
+    # --- Execution mode ---
+    # paper: Deriv's public feed + real quotes, fills simulated (no account; default).
+    # demo:  Deriv demo account via OTP, real `buy` with virtual money (needs DERIV_* keys).
+    execution_mode: Literal["paper", "demo"] = "paper"
+    deriv_public_ws_url: str = "wss://api.derivws.com/trading/v1/options/ws/public"
+    # With no AI key configured, use a labelled rule-based stand-in so the pipeline still runs.
+    allow_rule_model: bool = True
 
     # --- Deriv ---
     deriv_app_id: str = ""
@@ -80,6 +88,9 @@ class Settings(BaseSettings):
             raise ValueError("approval_band_high must be >= min_confidence")
         if self.min_history_ticks > self.buffer_ticks:
             raise ValueError("min_history_ticks must be <= buffer_ticks")
+        if self.execution_mode == "paper" and not self.symbol.startswith("1HZ"):
+            # paper settlement requires one tick per second to place entry/exit ticks exactly
+            raise ValueError("paper mode needs a 1-second index such as 1HZ100V")
         return self
 
 

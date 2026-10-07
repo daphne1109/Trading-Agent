@@ -25,6 +25,7 @@ from agent.deriv.guard import RealAccountRefused, assert_demo_ws_url
 
 UrlProvider = Callable[[], Awaitable[str]]
 EventSink = Callable[[str, str, dict[str, Any]], Awaitable[None]]
+UrlGuard = Callable[[str, Collection[str]], None]
 Message = dict[str, Any]
 
 SUBSCRIPTION_QUEUE_SIZE = 2_000
@@ -82,7 +83,9 @@ class DerivWS:
         backoff_max_s: float = 30.0,
         on_event: EventSink = _no_events,
         rng: Callable[[], float] = random.random,
+        url_guard: UrlGuard = assert_demo_ws_url,
     ) -> None:
+        self._guard = url_guard
         self._url_provider = url_provider
         self._allowed_hosts = allowed_hosts
         self._ping_interval_s = ping_interval_s
@@ -112,7 +115,7 @@ class DerivWS:
         while not self._stopping:
             try:
                 url = await self._url_provider()
-                assert_demo_ws_url(url, self._allowed_hosts)
+                self._guard(url, self._allowed_hosts)
                 async with websockets.connect(url, ping_interval=None, max_size=2**22) as ws:
                     self._ws = ws
                     self._url = url
@@ -196,7 +199,7 @@ class DerivWS:
         if not self.connected.is_set() or self._url is None:
             return False
         try:
-            assert_demo_ws_url(self._url, self._allowed_hosts)
+            self._guard(self._url, self._allowed_hosts)
         except RealAccountRefused:
             return False
         return True

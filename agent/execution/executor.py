@@ -153,6 +153,17 @@ class Executor:
         if await self._halted() or not self._ws.connection_is_demo():
             await self._repo.mark_error(trade_id, "halted or not demo just before buy")
             return ExecutionResult(Outcome.BLOCKED, "halted or not demo just before buy", trade_id)
+        return await self._place(trade_id, contract_type, proposal, ask_price, payout)
+
+    async def _place(
+        self,
+        trade_id: int,
+        contract_type: str,
+        proposal: dict[str, Any],
+        ask_price: Decimal,
+        payout: Decimal | None,
+    ) -> ExecutionResult:
+        """Send `buy` for the claimed trade. Every check has already passed."""
         try:
             reply = await self._ws.request(
                 {"buy": proposal["id"], "price": float(ask_price)}, self._timeout

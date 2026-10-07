@@ -1,6 +1,38 @@
 import pytest
 
-from agent.deriv.guard import RealAccountRefused, assert_demo_account, assert_demo_ws_url
+from agent.deriv.guard import (
+    RealAccountRefused,
+    assert_demo_account,
+    assert_demo_ws_url,
+    assert_public_ws_url,
+)
+
+PUBLIC_URL = "wss://api.derivws.com/trading/v1/options/ws/public"
+
+
+def test_public_guard_accepts_public_endpoint():
+    assert_public_ws_url(PUBLIC_URL, {"api.derivws.com"})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc",
+        "wss://api.derivws.com/trading/v1/options/ws/real?otp=abc",
+        PUBLIC_URL + "?otp=abc",  # paper mode never carries credentials
+        "wss://evil.example.com/trading/v1/options/ws/public",
+        "ws://api.derivws.com/trading/v1/options/ws/public",
+    ],
+)
+def test_public_guard_rejects_everything_else(url):
+    with pytest.raises(RealAccountRefused):
+        assert_public_ws_url(url, {"api.derivws.com"})
+
+
+def test_demo_guard_still_rejects_public_endpoint():
+    with pytest.raises(RealAccountRefused):
+        assert_demo_ws_url(PUBLIC_URL, {"api.derivws.com"})
+
 
 PROD = {"api.derivws.com"}
 DEMO_URL = "wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc"
