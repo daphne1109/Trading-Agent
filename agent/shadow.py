@@ -51,9 +51,10 @@ def settle(action: Action, entry: float, exit_: float, payout_ratio: Decimal) ->
 @dataclass
 class _Pending:
     decision_id: int
-    entry_epoch: int
-    entry_quote: float
+    decided_at_epoch: int  # last tick the decision saw
     actions: dict[str, Action]
+    entry_epoch: int | None = None  # first tick after the decision (Deriv's entry spot)
+    entry_quote: float | None = None
 
 
 class ShadowBook:
@@ -83,19 +84,30 @@ class ShadowBook:
                     for name, a in actions.items()
                 ],
             )
-        self._pending.append(_Pending(decision_id, entry_epoch, quotes[-1], actions))
+        self._pending.append(_Pending(decision_id, entry_epoch, actions))
 
     async def on_tick(self, tick: Tick) -> int:
-        """Settle every pending paper decision whose exit tick has arrived. Returns how many."""
-        due = [p for p in self._pending if tick.epoch >= p.entry_epoch + self._duration]
+        """Advance pending paper decisions with Deriv's Rise/Fall timing, the same as a real
+        (or paper-executed) contract: entry = first tick after the decision, exit = the
+        `duration_ticks`-th tick after entry. Returns how many settled on this tick."""
+        due: list[tuple[_Pending, float, float]] = []
+        for p in self._pending:
+            if p.entry_quote is None:
+                if tick.epoch > p.decided_at_epoch:
+                    p.entry_epoch, p.entry_quote = tick.epoch, tick.quote
+                continue
+            assert p.entry_epoch is not None
+            if tick.epoch >= p.entry_epoch + self._duration:
+                due.append((p, p.entry_quote, tick.quote))
         if not due:
             return 0
-        self._pending = [p for p in self._pending if p not in due]
+        settled = {id(p) for p, _, _ in due}
+        self._pending = [p for p in self._pending if id(p) not in settled]
         rows = []
-        for p in due:
-            up = tick.quote > p.entry_quote
+        for p, entry, exit_ in due:
+            up = exit_ > entry
             for name, action in p.actions.items():
-                profit = settle(action, p.entry_quote, tick.quote, self._payout)
+                profit = settle(action, entry, exit_, self._payout)
                 rows.append((up, profit, p.decision_id, name))
         async with self._pool.connection() as conn, conn.cursor() as cur:
             await cur.executemany(

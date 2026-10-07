@@ -11,6 +11,13 @@ Every incident is logged here when it happens: what broke, how it was found, the
 **Lesson:** (one general sentence)
 -->
 
+## 2026-10-07 16:21 MYT: Dashboard said the model's call won while the same trade lost
+**What broke:** On the first live paper trade, a PUT that settled at −$1.00, the "model vs simple strategies" table showed the model's call as +$0.95.
+**How it was found:** By eye, on the dashboard, a minute into the first live run.
+**Root cause:** The shadow book measured each paper call from the price *at decision time*. The executor correctly used Deriv's Rise/Fall timing: entry is the first tick *after* the trade, and exit is 5 ticks after that. When the price moves in between, the same call can win in one and lose in the other.
+**Fix:** The shadow book now uses Deriv's entry/exit rule too, so every strategy is scored on the same timing as a real contract. A regression test covers it.
+**Lesson:** When two components compute "the same" number, give them one definition. Comparisons are only honest when the rules match.
+
 ## 2026-10-07 MYT: Deriv's trading API isn't available to Malaysian residents
 **What broke:** Registering the app on developers.deriv.com showed "These services are currently unavailable in your country of residence". No app ID and no account token, so the demo-account executor can't run.
 **How it was found:** The P0 setup, before any live trade.
